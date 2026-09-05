@@ -49,19 +49,30 @@ def get_trade_date():
     return today.strftime('%Y%m%d')
 
 def ensure_datacfg():
-    """确保 datacfg.dat 中有 ID=114 注册"""
+    """先清空 datacfg.dat 中 ID=114 旧注册记录，再注册新记录（写入前清空已有数据）"""
     if not os.path.exists(CFG_FILE):
         print(f"[WARN] {CFG_FILE} not found, skip datacfg check")
         return
     with open(CFG_FILE, 'rb') as f:
         data = bytearray(f.read())
-    for i in range(len(data) // 120):
+
+    # 1) 清空：删除已存在的 ID=114 记录（若有）
+    removed = 0
+    i = 0
+    while i < len(data) // 120:
         offset = i * 120
         id_val = struct.unpack('<I', data[offset:offset+4])[0]
         if id_val == DATA_ID:
-            print(f"  datacfg: ID={DATA_ID} already registered")
-            return
-    # 没找到，插入
+            del data[offset:offset+120]
+            removed += 1
+            continue  # 删除后 i 不变，继续检查同位置
+        i += 1
+    if removed:
+        print(f"  datacfg: 已清空 ID={DATA_ID} 旧注册记录 {removed} 条")
+    else:
+        print(f"  datacfg: ID={DATA_ID} 无旧注册记录（无需清空）")
+
+    # 2) 插入新注册记录（按 ID 顺序插到 113 之后）
     insert_offset = None
     for i in range(len(data) // 120):
         offset = i * 120
@@ -81,7 +92,7 @@ def ensure_datacfg():
     new_data = bytearray(data[:insert_offset]) + rec + bytearray(data[insert_offset:])
     with open(CFG_FILE, 'wb') as f:
         f.write(new_data)
-    print(f"  datacfg: registered ID={DATA_ID} '{DATA_NAME}'")
+    print(f"  datacfg: registered ID={DATA_ID} '{DATA_NAME}'（写入前已清空旧数据）")
 
 def main():
     # 日期
@@ -134,10 +145,19 @@ def main():
         sys.exit(1)
     with open(EXTERN_FILE, 'rb') as f:
         raw = f.read()
-    old_lines = raw.split(b'\r\n')
-    old_lines = [l for l in old_lines if l and f'|{DATA_ID}|'.encode() not in l]
-    clean_old = b'\r\n'.join(old_lines) + b'\r\n' if old_lines else b''
-    result = clean_old + new_bytes
+    # 写入前清空：删除所有已存在的 ID=114 行（字节级操作，兼容 \r\n / \n 混合，不碰其他ID/GBK内容）
+    norm = raw.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    lines_all = norm.split(b'\n')
+    kept_lines = [l for l in lines_all if l and (f'|{DATA_ID}|'.encode() not in l)]
+    cleared_n = len([l for l in lines_all if l and (f'|{DATA_ID}|'.encode() in l)])
+    if cleared_n:
+        print(f"  extern: 已清空旧 ID={DATA_ID} 行 {cleared_n} 条")
+    else:
+        print(f"  extern: ID={DATA_ID} 无旧行（无需清空）")
+    kept_bytes = b'\n'.join(kept_lines)
+    if kept_bytes:
+        kept_bytes += b'\n'
+    result = kept_bytes + new_bytes
     with open(EXTERN_FILE, 'wb') as f:
         f.write(result)
     print(f"  Written to {EXTERN_FILE}")
