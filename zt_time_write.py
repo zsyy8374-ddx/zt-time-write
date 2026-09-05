@@ -109,7 +109,7 @@ def main():
         sys.exit(1)
     with THS(ops) as ths:
         resp = ths.wencai_nlp(
-            f"最终涨停时间[{query_date}], 涨停, 非ST, 非停牌, 代码[{query_date}], 股票简称"
+            f"最终涨停时间[{query_date}], 涨停, 非停牌, 代码[{query_date}], 股票简称"
         )
     if not resp.success:
         print(f"[ERROR] wencai query failed: {resp.error}")
